@@ -499,41 +499,33 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 
 	if (ndo->ndo_vflag && !ndo->ndo_Kflag && !fragmented) {
                 /* Check the checksum, if possible. */
-                uint16_t sum, udp_sum;
+                int sum = -1;
+                uint16_t udp_sum;
 
 		/*
 		 * XXX - do this even if vflag == 1?
 		 * TCP does, and we do so for UDP-over-IPv6.
 		 */
-	        if (IP_V(ip) == 4 && (ndo->ndo_vflag > 1)) {
-			udp_sum = EXTRACT_16BITS(&up->uh_sum);
-			if (udp_sum == 0) {
-				ND_PRINT((ndo, "[no cksum] "));
-			} else if (ND_TTEST2(cp[0], length)) {
+		if (IP_V(ip) == 4 && (ndo->ndo_vflag > 1))
+			sum = 4;
+		else if (IP_V(ip) == 6 && ip6->ip6_plen)
+			sum = 6;
+		udp_sum = EXTRACT_16BITS(&up->uh_sum);
+		if (sum >= 0 && udp_sum && ND_TTEST2(cp[0], length)) {
+			if (sum == 4)
 				sum = udp_cksum(ndo, ip, up, length + sizeof(struct udphdr));
-
-	                        if (sum != 0) {
-					ND_PRINT((ndo, "[bad udp cksum 0x%04x -> 0x%04x!] ",
-					    udp_sum,
-					    in_cksum_shouldbe(udp_sum, sum)));
-				} else
-					ND_PRINT((ndo, "[udp sum ok] "));
-			}
+			else
+				sum = udp6_cksum(ndo, ip6, up, length + sizeof(struct udphdr));
 		}
-		else if (IP_V(ip) == 6 && ip6->ip6_plen) {
-			udp_sum = EXTRACT_16BITS(&up->uh_sum);
+		if (sum >= 0) {
 			if (udp_sum == 0) {
 				ND_PRINT((ndo, "[no cksum] "));
-			} else if (ND_TTEST2(cp[0], length)) {
-				sum = udp6_cksum(ndo, ip6, up, length + sizeof(struct udphdr));
-
-	                        if (sum != 0) {
-					ND_PRINT((ndo, "[bad udp cksum 0x%04x -> 0x%04x!] ",
-					    udp_sum,
-					    in_cksum_shouldbe(udp_sum, sum)));
-				} else
-					ND_PRINT((ndo, "[udp sum ok] "));
-			}
+			} else if (sum != 0) {
+				ND_PRINT((ndo, "[bad udp cksum 0x%04x -> 0x%04x!] ",
+				    udp_sum,
+				    in_cksum_shouldbe(udp_sum, sum)));
+			} else
+				ND_PRINT((ndo, "[udp sum ok] "));
 		}
 	}
 
