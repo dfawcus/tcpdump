@@ -122,7 +122,8 @@ enum dccp_pkt_type {
 	DCCP_PKT_CLOSE,
 	DCCP_PKT_RESET,
 	DCCP_PKT_SYNC,
-	DCCP_PKT_SYNCACK
+	DCCP_PKT_SYNCACK,
+	DCCP_PKT_LISTEN
 };
 
 static const struct tok dccp_pkt_type_str[] = {
@@ -136,6 +137,7 @@ static const struct tok dccp_pkt_type_str[] = {
 	{ DCCP_PKT_RESET, "DCCP-Reset" },
 	{ DCCP_PKT_SYNC, "DCCP-Sync" },
 	{ DCCP_PKT_SYNCACK, "DCCP-SyncAck" },
+	{ DCCP_PKT_LISTEN, "DCCP-Listen" },
 	{ 0, NULL}
 };
 
@@ -469,13 +471,30 @@ void dccp_print(netdissect_options *ndo, const u_char *bp, const u_char *data2,
 		}
 		ND_PRINT((ndo, "%s ", tok2str(dccp_pkt_type_str, "", dccph_type)));
 		break;
+	case DCCP_PKT_LISTEN: {
+		const struct dccp_hdr_request *dhr =
+			(const struct dccp_hdr_request *)(bp + fixed_hdrlen);
+		fixed_hdrlen += 4;
+		if (len < fixed_hdrlen) {
+			ND_PRINT((ndo, "truncated-%s - %u bytes missing!",
+				  tok2str(dccp_pkt_type_str, "", dccph_type),
+				  len - fixed_hdrlen));
+			return;
+		}
+		ND_TCHECK(*dhr);
+		ND_PRINT((ndo, "%s (service=%d) ",
+			  tok2str(dccp_pkt_type_str, "", dccph_type),
+			  EXTRACT_32BITS(&dhr->dccph_req_service)));
+		break;
+	}
 	default:
 		ND_PRINT((ndo, "%s ", tok2str(dccp_pkt_type_str, "unknown-type-%u", dccph_type)));
 		break;
 	}
 
 	if ((DCCPH_TYPE(dh) != DCCP_PKT_DATA) &&
-			(DCCPH_TYPE(dh) != DCCP_PKT_REQUEST))
+			(DCCPH_TYPE(dh) != DCCP_PKT_REQUEST) &&
+			(DCCPH_TYPE(dh) != DCCP_PKT_LISTEN))
 		dccp_print_ack_no(ndo, bp);
 
 	if (ndo->ndo_vflag < 2)
