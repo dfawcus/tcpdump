@@ -117,7 +117,7 @@ vat_print(netdissect_options *ndo, const void *hdr, register const struct udphdr
 
 static void
 rtp_print(netdissect_options *ndo, const void *hdr, u_int len,
-          register const struct udphdr *up)
+          register const struct udphdr *up, int udplite)
 {
 	/* rtp v1 or v2 */
 	const u_int *ip = (const u_int *)hdr;
@@ -148,7 +148,8 @@ rtp_print(netdissect_options *ndo, const void *hdr, u_int len,
 		ip += 1;
 		len -= 1;
 	}
-	ND_PRINT((ndo, "udp/%s %d c%d %s%s %d %u",
+	ND_PRINT((ndo, "udp%s/%s %d c%d %s%s %d %u",
+		udplite ? "lite" : "",
 		ptype,
 		dlen,
 		contype,
@@ -269,17 +270,20 @@ rtcp_print(netdissect_options *ndo, const u_char *hdr, const u_char *ep)
 
 static int udp_cksum(netdissect_options *ndo, register const struct ip *ip,
 		     register const struct udphdr *up,
-		     register u_int len)
+		     register u_int len, u_int covlen, int udplite)
 {
-	return nextproto4_cksum(ndo, ip, (const uint8_t *)(const void *)up, len, len,
-				IPPROTO_UDP);
+	uint8_t proto = udplite ? IPPROTO_UDPLITE : IPPROTO_UDP;
+	return nextproto4_cksum(ndo, ip, (const uint8_t *)(const void *)up,
+				len, covlen, proto);
 }
 
 static int udp6_cksum(netdissect_options *ndo, const struct ip6_hdr *ip6,
-		      const struct udphdr *up, u_int len)
+		      const struct udphdr *up, u_int len, u_int covlen,
+		      int udplite)
 {
-	return nextproto6_cksum(ndo, ip6, (const uint8_t *)(const void *)up, len, len,
-				IPPROTO_UDP);
+	uint8_t proto = udplite ? IPPROTO_UDPLITE : IPPROTO_UDP;
+	return nextproto6_cksum(ndo, ip6, (const uint8_t *)(const void *)up,
+				len, covlen, proto);
 }
 
 static void
@@ -293,7 +297,7 @@ udpipaddr_print(netdissect_options *ndo, const struct ip *ip, int sport, int dpo
 		ip6 = NULL;
 
 	if (ip6) {
-		if (ip6->ip6_nxt == IPPROTO_UDP) {
+		if (ip6->ip6_nxt == IPPROTO_UDP || ip6->ip6_nxt == IPPROTO_UDPLITE) {
 			if (sport == -1) {
 				ND_PRINT((ndo, "%s > %s: ",
 					ip6addr_string(ndo, &ip6->ip6_src),
@@ -313,7 +317,7 @@ udpipaddr_print(netdissect_options *ndo, const struct ip *ip, int sport, int dpo
 			}
 		}
 	} else {
-		if (ip->ip_p == IPPROTO_UDP) {
+		if (ip->ip_p == IPPROTO_UDP || ip->ip_p == IPPROTO_UDPLITE) {
 			if (sport == -1) {
 				ND_PRINT((ndo, "%s > %s: ",
 					ipaddr_string(ndo, &ip->ip_src),
@@ -337,13 +341,13 @@ udpipaddr_print(netdissect_options *ndo, const struct ip *ip, int sport, int dpo
 
 void
 udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
-	  register const u_char *bp2, int fragmented)
+	  register const u_char *bp2, int fragmented, int udplite)
 {
 	register const struct udphdr *up;
 	register const struct ip *ip;
 	register const u_char *cp;
 	register const u_char *ep = bp + length;
-	uint16_t sport, dport, ulen;
+	uint16_t sport, dport, ulen, chklen;
 	register const struct ip6_hdr *ip6;
 	int show_lengths = 1;
 
@@ -357,7 +361,7 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 		ip6 = NULL;
 	if (!ND_TTEST(up->uh_dport)) {
 		udpipaddr_print(ndo, ip, -1, -1);
-		ND_PRINT((ndo, "[|udp]"));
+		ND_PRINT((ndo, "[|udp%s]", udplite ? "lite" : ""));
 		return;
 	}
 
@@ -366,24 +370,38 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 
 	if (length < sizeof(struct udphdr)) {
 		udpipaddr_print(ndo, ip, sport, dport);
-		ND_PRINT((ndo, "truncated-udp %d", length));
+		ND_PRINT((ndo, "truncated-udp%s %d", 
+			 udplite ? "lite" : "", length));
 		return;
 	}
+
 	ulen = EXTRACT_16BITS(&up->uh_ulen);
-	if (ulen < sizeof(struct udphdr)) {
-		udpipaddr_print(ndo, ip, sport, dport);
-		ND_PRINT((ndo, "truncated-udplength %d", ulen));
-		return;
+	if (udplite) {
+		if (ulen && ulen < sizeof(struct udphdr)) {
+			udpipaddr_print(ndo, ip, sport, dport);
+			ND_PRINT((ndo, "bad-udplite-coverage %d", ulen));
+			return;
+		}
+		chklen = ulen ? ulen : length;
+		ulen = length;
+	} else {
+		if (ulen < sizeof(struct udphdr)) {
+			udpipaddr_print(ndo, ip, sport, dport);
+			ND_PRINT((ndo, "truncated-udplength %d", ulen));
+			return;
+		}
+		chklen = ulen;
 	}
 	ulen -= sizeof(struct udphdr);
 	length -= sizeof(struct udphdr);
+	chklen -= sizeof(struct udphdr);
 	if (ulen < length)
 		length = ulen;
 
 	cp = (const u_char *)(up + 1);
 	if (cp > ndo->ndo_snapend) {
 		udpipaddr_print(ndo, ip, sport, dport);
-		ND_PRINT((ndo, "[|udp]"));
+		ND_PRINT((ndo, "[|udp%s]", udplite ? "lite" : ""));
 		return;
 	}
 
@@ -416,7 +434,7 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 
 		case PT_RTP:
 			udpipaddr_print(ndo, ip, sport, dport);
-			rtp_print(ndo, (const void *)(up + 1), length, up);
+			rtp_print(ndo, (const void *)(up + 1), length, up, udplite);
 			break;
 
 		case PT_RTCP:
@@ -512,21 +530,23 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 		else if (IP_V(ip) == 6 && ip6->ip6_plen)
 			sum = 6;
 		udp_sum = EXTRACT_16BITS(&up->uh_sum);
-		if (sum >= 0 && udp_sum && ND_TTEST2(cp[0], length)) {
+		if (sum >= 0 && udp_sum && ND_TTEST2(cp[0], chklen)) {
 			if (sum == 4)
-				sum = udp_cksum(ndo, ip, up, length + sizeof(struct udphdr));
+				sum = udp_cksum(ndo, ip, up, length + sizeof(struct udphdr),
+						chklen + sizeof(struct udphdr), udplite);
 			else
-				sum = udp6_cksum(ndo, ip6, up, length + sizeof(struct udphdr));
+				sum = udp6_cksum(ndo, ip6, up, length + sizeof(struct udphdr),
+						 chklen + sizeof(struct udphdr), udplite);
 		}
 		if (sum >= 0) {
 			if (udp_sum == 0) {
 				ND_PRINT((ndo, "[no cksum] "));
 			} else if (sum != 0) {
-				ND_PRINT((ndo, "[bad udp cksum 0x%04x -> 0x%04x!] ",
-				    udp_sum,
+				ND_PRINT((ndo, "[bad udp%s cksum 0x%04x -> 0x%04x!] ",
+				    udplite ? "lite" : "", udp_sum,
 				    in_cksum_shouldbe(udp_sum, sum)));
 			} else
-				ND_PRINT((ndo, "[udp sum ok] "));
+				ND_PRINT((ndo, "[udp%s sum ok] ", udplite ? "lite" : ""));
 		}
 	}
 
@@ -654,11 +674,20 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 		}
 	}
 	if (show_lengths) {
-		if (ulen > length)
-			ND_PRINT((ndo, "UDP, bad length %u > %u",
-			    ulen, length));
-		else
-			ND_PRINT((ndo, "UDP, length %u", ulen));
+		if (udplite) {
+			if (chklen > length)
+				ND_PRINT((ndo, "UDP-Lite, bad coverage %u > %u",
+				    chklen, length));
+			else
+				ND_PRINT((ndo, "UDP-Lite, coverage %u, length %u",
+				    chklen, length));
+		} else {
+			if (ulen > length)
+				ND_PRINT((ndo, "UDP, bad length %u > %u",
+				    ulen, length));
+			else
+				ND_PRINT((ndo, "UDP, length %u", ulen));
+		}
 	}
 }
 

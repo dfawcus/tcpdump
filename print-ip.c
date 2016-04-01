@@ -377,9 +377,11 @@ again:
 		break;
 
 	case IPPROTO_UDP:
+	case IPPROTO_UDPLITE:
 		/* pass on the MF bit plus the offset to detect fragments */
 		udp_print(ndo, ipds->cp, ipds->len, (const u_char *)ipds->ip,
-			  ipds->off & (IP_MF|IP_OFFMASK));
+			  ipds->off & (IP_MF|IP_OFFMASK),
+			  ipds->nh == IPPROTO_UDPLITE);
 		break;
 
 	case IPPROTO_ICMP:

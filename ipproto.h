@@ -143,3 +143,6 @@ extern const struct tok ipproto_values[];
 #ifndef IPPROTO_MOBILITY
 #define IPPROTO_MOBILITY	135
 #endif
+#ifndef IPPROTO_UDPLITE
+#define IPPROTO_UDPLITE		136
+#endif

@@ -580,7 +580,7 @@ extern void timed_print(netdissect_options *, const u_char *);
 extern void tipc_print(netdissect_options *, const u_char *, u_int, u_int);
 extern u_int token_print(netdissect_options *, const u_char *, u_int, u_int);
 extern void udld_print(netdissect_options *, const u_char *, u_int);
-extern void udp_print(netdissect_options *, const u_char *, u_int, const u_char *, int);
+extern void udp_print(netdissect_options *, const u_char *, u_int, const u_char *, int, int);
 extern int vjc_print(netdissect_options *, register const char *, u_short);
 extern void vqp_print(netdissect_options *, register const u_char *, register u_int);
 extern void vrrp_print(netdissect_options *, const u_char *, u_int, const u_char *, int);

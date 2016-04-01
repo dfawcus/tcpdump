@@ -1205,6 +1205,7 @@ get_upperlayer(netdissect_options *ndo, const u_char *bp, u_int *prot)
 		case IPPROTO_TCP:
 		case IPPROTO_SCTP:
 		case IPPROTO_DCCP:
+		case IPPROTO_UDPLITE:
 			uh = (const struct udphdr *)bp;
 			if (ND_TTEST(uh->uh_dport)) {
 				*prot = nh;
