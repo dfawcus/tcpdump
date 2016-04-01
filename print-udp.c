@@ -345,6 +345,7 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 	register const u_char *ep = bp + length;
 	uint16_t sport, dport, ulen;
 	register const struct ip6_hdr *ip6;
+	int show_lengths = 1;
 
 	if (ep > ndo->ndo_snapend)
 		ep = ndo->ndo_snapend;
@@ -530,6 +531,7 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 	}
 
 	if (!ndo->ndo_qflag) {
+		show_lengths = 0;
 		if (IS_SRC_OR_DST_PORT(NAMESERVER_PORT))
 			ns_print(ndo, (const u_char *)(up + 1), length, 0);
 		else if (IS_SRC_OR_DST_PORT(MULTICASTDNS_PORT))
@@ -648,13 +650,10 @@ udp_print(netdissect_options *ndo, register const u_char *bp, u_int length,
 				ND_PRINT((ndo, "kip "));
 			llap_print(ndo, cp, length);
 		} else {
-			if (ulen > length)
-				ND_PRINT((ndo, "UDP, bad length %u > %u",
-				    ulen, length));
-			else
-				ND_PRINT((ndo, "UDP, length %u", ulen));
+			show_lengths = 1;
 		}
-	} else {
+	}
+	if (show_lengths) {
 		if (ulen > length)
 			ND_PRINT((ndo, "UDP, bad length %u > %u",
 			    ulen, length));
